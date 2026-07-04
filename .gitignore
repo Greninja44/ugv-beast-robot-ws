@@ -6,6 +6,10 @@ __pycache__/
 .vscode/
 *.user
 
+# Claude Code's own project-context file — useful locally across sessions,
+# not meant for the public repo.
+CLAUDE.md
+
 # Secrets — never commit the real dashboard config (has the control token).
 # Copy dashboard.yaml.example -> dashboard.yaml and fill in your own token.
 src/robot_dashboard/config/dashboard.yaml
