@@ -1,0 +1,9 @@
+# Run a named skill from robot_skills (typed replacement for the vendor 'behavior' string action).
+string skill                 # e.g. "patrol", "follow_target", "return_home"
+string[] args                # optional key=value arguments
+---
+bool success
+string result_detail
+---
+string status                # human-readable progress
+float32 progress             # 0.0 - 1.0

@@ -1,0 +1,7 @@
+# Thin, typed navigation goal (robot_navigation wraps Nav2's navigate_to_pose).
+geometry_msgs/PoseStamped target      # goal pose, usually in 'map'
+float32 tolerance                      # goal tolerance (m)
+---
+bool success
+---
+float32 distance_remaining             # m

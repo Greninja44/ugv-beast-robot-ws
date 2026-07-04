@@ -1,0 +1,5 @@
+# Switch the high-level behaviour mode of the robot.
+string mode        # "idle" | "teleop" | "explore" | "track" | "dock" | "ai"
+---
+bool success
+string message
