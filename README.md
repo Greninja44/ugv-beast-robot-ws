@@ -1,7 +1,7 @@
 # UGV Beast Robot Workspace
 
 A modern web dashboard and ROS 2 extension layer for the **Waveshare UGV Beast** — built to sit
-cleanly *on top of* Waveshare's vendor stack without ever modifying it. Drive the robot, watch its
+cleanly *on top of* Waveshare's own stack without ever modifying it. Drive the robot, watch its
 camera, visualize its sensors, run SLAM/Nav2, and manage it all from a browser — on your phone,
 tablet, or laptop, no ROS tooling required on the client side.
 
@@ -26,9 +26,9 @@ tablet, or laptop, no ROS tooling required on the client side.
 
 ## What's in here
 
-This repository is **not** the vendor firmware/ROS stack that ships with the robot — that lives
+This repository is **not** the Waveshare firmware/ROS stack that ships with the robot — that lives
 separately on the Raspberry Pi (Waveshare's `ugv_ws`) and is treated as **read-only**. Instead,
-this is a self-contained ROS 2 workspace that talks to the vendor stack purely through standard
+this is a self-contained ROS 2 workspace that talks to the Waveshare stack purely through standard
 ROS interfaces (topics, services, actions, TF), so it stays compatible even as Waveshare updates
 their own software.
 
@@ -37,7 +37,7 @@ their own software.
 | **`robot_dashboard`** | Pi | The web dashboard — FastAPI + rclpy backend, React/TypeScript frontend. The main deliverable of this repo. |
 | `robot_interfaces` | Pi + dev machine | Shared custom message/service/action definitions. |
 | `robot_perception` | Pi | Scaffold: consumes camera/LiDAR, publishes structured perception. |
-| `robot_navigation` | Pi | Scaffold: typed action wrapping the vendor's Nav2 stack. |
+| `robot_navigation` | Pi | Scaffold: typed action wrapping Waveshare's Nav2 stack. |
 | `robot_manipulation` | Pi | Scaffold: pan-tilt gimbal aiming (if fitted). |
 | `robot_skills` | Pi | Scaffold: behavior/skill library. |
 | `robot_bringup` | Pi + dev machine | Launch files that compose the packages above. |
@@ -70,7 +70,7 @@ Three layers, each only talking to the one directly below it:
                 │ /cmd_vel, /goal_pose, actions            │ /scan, /odom,
                 │ SLAM/Nav2 launch control                  │ /tf, camera
 ┌───────────────┴────────────────────────────────────────────┴─────────────┐
-│  VENDOR ROS 2 STACK  (Waveshare ugv_ws, Docker — never modified)          │
+│  WAVESHARE ROS 2 STACK  (ugv_ws, Docker — never modified)          │
 │  ugv_bringup · ugv_driver · ugv_base_node · Nav2 · SLAM · depthai_ros     │
 └───────────────▲───────────────────────────────────────────────────────────┘
                 │ UART (JSON protocol) @115200
@@ -86,7 +86,7 @@ Three layers, each only talking to the one directly below it:
 flowchart TB
   subgraph Pi["Raspberry Pi 5"]
     subgraph Docker["Docker container (--network host --privileged)"]
-      ROS["Vendor ROS 2 stack<br/>+ robot_dashboard"]
+      ROS["Waveshare ROS 2 stack<br/>+ robot_dashboard"]
     end
   end
   ESP["ESP32 sub-controller"]
@@ -125,14 +125,14 @@ flowchart LR
 
   bridge --> teleop --> |/cmd_vel| bringup
   bridge --> camsvc
-  bridge --> nav -->|navigate_to_pose| Nav2["vendor Nav2"]
+  bridge --> nav -->|navigate_to_pose| Nav2["Waveshare Nav2"]
   bridge --> ws --> Browser["React frontend"]
   camsvc -->|MJPEG| Browser
 ```
 
 ### Extension points
 
-Build your own perception/navigation/AI code against these stable seams — never edit the vendor
+Build your own perception/navigation/AI code against these stable seams — never edit the Waveshare
 workspace directly:
 
 | Seam | How |
@@ -140,10 +140,10 @@ workspace directly:
 | **Drive** | Publish `geometry_msgs/Twist` on `/cmd_vel`. |
 | **Perceive** | Subscribe `/scan` (LiDAR), the camera's compressed image topic, `/odom`, and TF. |
 | **Navigate** | Use Nav2's `navigate_to_pose` action, or publish `/goal_pose`. |
-| **React to behaviors** | The vendor's `behavior` action (string-command based) for simple triggers. |
+| **React to behaviors** | Waveshare's `behavior` action (string-command based) for simple triggers. |
 | **Add hardware** | Extend `robot_manipulation` for a gimbal/arm; the URDF and TF frames are ready for it. |
 
-Full reverse-engineered documentation of the vendor stack — every topic, service, action, TF
+Full reverse-engineered documentation of the Waveshare stack — every topic, service, action, TF
 frame, and hardware detail — is in [`docs/`](docs/INDEX.md).
 
 ---
@@ -159,7 +159,7 @@ frame, and hardware detail — is in [`docs/`](docs/INDEX.md).
 - **Sensors** — live LiDAR scan view, IMU/compass, odometry trail, TF health.
 - **Navigation** — occupancy-grid map view, click-to-send-goal, saved waypoints, Nav2 status/cancel.
 - **Robot Controls** — start/stop SLAM (Cartographer/GMapping) and Nav2, save maps, toggle LEDs —
-  all via an allowlisted launch manager that only ever runs the vendor's own launch files.
+  all via an allowlisted launch manager that only ever runs Waveshare's own launch files.
 - **Logs** — live `/rosout` stream with level filtering, search, and export.
 - **Settings** — control-token management, ROS domain/DDS info.
 
@@ -170,10 +170,10 @@ the dashboard is fully read-only.
 
 ## Prerequisites
 
-- A Waveshare UGV Beast with its vendor software already set up and working (this project builds
+- A Waveshare UGV Beast with its own software already set up and working (this project builds
   *on top of* that — see Waveshare's own documentation for initial robot setup).
-- Raspberry Pi 5 running the vendor Docker image, reachable over SSH and your LAN.
-- ROS 2 Humble (already present in the vendor Docker image on the Pi).
+- Raspberry Pi 5 running the Waveshare Docker image, reachable over SSH and your LAN.
+- ROS 2 Humble (already present in the Waveshare Docker image on the Pi).
 - Node.js (LTS) on whichever machine you build the frontend on.
 - A development machine on the same network (Linux, WSL2, or macOS) for building and deploying.
 
@@ -229,10 +229,10 @@ colcon build --packages-select robot_interfaces robot_dashboard
 
 ### 5. Launch
 
-Bring up the vendor drivers (LiDAR, IMU, motor control) and the dashboard together:
+Bring up the Waveshare drivers (LiDAR, IMU, motor control) and the dashboard together:
 
 ```bash
-# Vendor stack (adjust env vars to your hardware — see docs/HARDWARE.md and docs/LIDAR.md)
+# Waveshare stack (adjust env vars to your hardware — see docs/HARDWARE.md and docs/LIDAR.md)
 export UGV_MODEL=ugv_beast
 export LDLIDAR_MODEL=ld06
 ros2 launch ugv_bringup bringup_lidar.launch.py &
@@ -276,13 +276,13 @@ Full step-by-step setup (SSH keys, `.wslconfig`, CycloneDDS, VS Code Remote-SSH)
 
 ## Documentation
 
-The [`docs/`](docs/INDEX.md) folder has full reverse-engineered documentation of the vendor stack,
+The [`docs/`](docs/INDEX.md) folder has full reverse-engineered documentation of the Waveshare stack,
 gathered through read-only static analysis and live ROS introspection:
 
 | Doc | Contents |
 |---|---|
 | [SYSTEM_ARCHITECTURE.md](docs/SYSTEM_ARCHITECTURE.md) | Full architecture, diagrams, extension points |
-| [PACKAGE_SUMMARY.md](docs/PACKAGE_SUMMARY.md) | Every vendor package, node, and executable |
+| [PACKAGE_SUMMARY.md](docs/PACKAGE_SUMMARY.md) | Every Waveshare package, node, and executable |
 | [TOPICS.md](docs/TOPICS.md) / [SERVICES.md](docs/SERVICES.md) / [ACTIONS.md](docs/ACTIONS.md) | Full ROS interface reference |
 | [TF_TREE.md](docs/TF_TREE.md) | Live TF tree and frame origins |
 | [HARDWARE.md](docs/HARDWARE.md) | ESP32 protocol, sensors, power, device map |
@@ -296,7 +296,7 @@ gathered through read-only static analysis and live ROS introspection:
 
 ## Safety & design principles
 
-- **The vendor workspace is never modified.** Everything here talks to it only through ROS
+- **The Waveshare workspace is never modified.** Everything here talks to it only through ROS
   topics, services, actions, and TF — reinstalling or updating Waveshare's own software won't
   break this project.
 - **Read-only by default.** No control token configured = the dashboard cannot drive the robot,
@@ -305,6 +305,6 @@ gathered through read-only static analysis and live ROS introspection:
   single-driver lease, and a hard e-stop are all enforced in the backend — a flaky client
   connection can't leave the robot driving blind.
 - **Allowlisted actions only.** The launch manager (SLAM/Nav2 start-stop) only ever runs a fixed
-  set of the vendor's own launch files — never arbitrary commands.
+  set of Waveshare's own launch files — never arbitrary commands.
 - **Destructive actions are opt-in.** Reboot/shutdown are disabled by default and require an
   explicit config flag even with a valid token.
