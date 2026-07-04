@@ -42,6 +42,16 @@ Telemetry line pushed by the ESP32 (captured live):
 | `odl,odr` | left/right wheel odometry counts → `/odom/odom_raw` |
 | `v` | battery voltage (centivolts; `1194` ≈ 11.94 V) → `/voltage` |
 
+**Raw → SI unit conversion** (done by `ugv_bringup`'s `publish_imu_data_raw`/`publish_imu_mag`,
+*not* in this workspace — see `waveshareteam/ugv_ws/src/ugv_main/ugv_bringup/ugv_bringup/ugv_bringup.py`):
+- accel (m/s²): `9.8 * ax / 8192` (ICM-20948 ±4g range, 8192 LSB/g)
+- gyro (rad/s): `π * gx / (16.4 * 180)` (±2000°/s range, 16.4 LSB/°/s, then °/s→rad/s)
+- mag (µT): `mx * 0.15` (AK09916, 0.15 µT/LSB)
+
+So by the time data reaches `/imu/data_raw`/`/imu/mag`/`/imu/data`, it's already correctly scaled —
+this workspace's `bridge.py` (`_on_imu`) just reads `linear_acceleration`/`angular_velocity` as-is
+and needs no further conversion.
+
 Command frames are JSON with a `T` type field. Type codes (from `ugv_rpi/config.yaml`):
 | Code | Command |
 |------|---------|
