@@ -20,6 +20,7 @@ setup(
     entry_points={
         'console_scripts': [
             'skill_server = robot_skills.skill_server:main',
+            'mode_server = robot_skills.mode_server:main',
         ],
     },
 )

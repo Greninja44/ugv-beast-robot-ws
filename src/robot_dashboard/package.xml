@@ -3,7 +3,7 @@
 <package format="3">
   <name>robot_dashboard</name>
   <version>0.1.0</version>
-  <description>Web dashboard for the UGV Beast: FastAPI+rclpy backend, React frontend. Talks to the vendor stack via ROS interfaces only.</description>
+  <description>Web dashboard for the UGV Beast: FastAPI+rclpy backend, React frontend. Talks to the Waveshare stack via ROS interfaces only.</description>
   <maintainer email="greninja220324@gmail.com">shinchan</maintainer>
   <license>Apache-2.0</license>
 
@@ -15,7 +15,8 @@
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>rcl_interfaces</exec_depend>
   <exec_depend>tf2_ros</exec_depend>
-  <!-- Standard Nav2 interface (not vendor-specific) — the vendor's own
+  <exec_depend>robot_interfaces</exec_depend>
+  <!-- Standard Nav2 interface (not Waveshare-specific) — Waveshare's own
        ugv_interface/srv/MapSave has no server implementation anywhere in
        ugv_ws; what's actually configured and running is Nav2's own
        map_saver_server (see the map_saver: params in ugv_nav's yaml configs). -->

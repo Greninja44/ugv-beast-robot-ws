@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <!-- CycloneDDS config for WSL <-> Pi over a shared LAN (WSL2 mirrored networking).
      Point CYCLONEDDS_URI at this file. With mirrored networking, WSL shares the Windows
-     host LAN, so multicast discovery to the Pi (10.193.235.x) works. The <Peers> block is
-     a unicast fallback in case multicast is filtered. -->
+     host LAN, so multicast discovery to the Pi normally works — but the Pi's IP has
+     already changed once (DHCP / network switch / OS reflash), so the <Peers> unicast
+     fallback below is left ACTIVE (not commented out) rather than relying on multicast
+     alone. Update the address here if the Pi's IP changes again — check with
+     `ping raspberrypi.local` or your router's client list. -->
 <CycloneDDS xmlns="https://cdds.io/config"
             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
             xsi:schemaLocation="https://cdds.io/config https://raw.githubusercontent.com/eclipse-cyclonedds/cyclonedds/master/etc/cyclonedds.xsd">
@@ -16,12 +19,9 @@
     </General>
     <Discovery>
       <ParticipantIndex>auto</ParticipantIndex>
-      <!-- Unicast fallback: uncomment and set the Pi IP if multicast discovery is flaky. -->
-      <!--
       <Peers>
-        <Peer address="10.193.235.119"/>
+        <Peer address="10.209.117.119"/>
       </Peers>
-      -->
     </Discovery>
   </Domain>
 </CycloneDDS>

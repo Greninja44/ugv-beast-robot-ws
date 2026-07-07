@@ -1,6 +1,7 @@
 """WebSocket message schema (docs/DASHBOARD_DESIGN.md §5).
 
-Client → server ops: sub, unsub, ping, teleop, estop, estop_release, release_control
+Client → server ops: sub, unsub, ping, teleop, estop, estop_release, release_control,
+                      set_mode, run_skill, cancel_skill
 Server → client ops: msg, pong, err, hello, lease, estop
 """
 from __future__ import annotations
@@ -8,10 +9,11 @@ from __future__ import annotations
 from pydantic import BaseModel
 
 # Channels available. Each maps to a bridge subscription + a rate.
-CHANNELS = ('telemetry', 'odom', 'imu', 'scan', 'log', 'tf', 'nav')
+CHANNELS = ('telemetry', 'odom', 'imu', 'scan', 'log', 'tf', 'nav', 'mode', 'percepts', 'skill')
 
 # Ops that move the robot or change its safety state — require client.authenticated.
-CONTROL_OPS = ('teleop', 'estop', 'estop_release', 'release_control')
+CONTROL_OPS = ('teleop', 'estop', 'estop_release', 'release_control',
+               'set_mode', 'run_skill', 'cancel_skill')
 
 
 class ClientMsg(BaseModel):
@@ -21,6 +23,9 @@ class ClientMsg(BaseModel):
     lin: float = 0.0             # teleop: linear m/s (pre-clamp)
     ang: float = 0.0             # teleop: angular rad/s (pre-clamp)
     deadman: bool = False        # teleop: must be true while actively driving
+    mode: str | None = None      # set_mode: target mode string
+    skill: str | None = None     # run_skill: skill name (see robot_skills.skill_server)
+    args: list[str] = []         # run_skill: "key=value" strings, forwarded as-is
 
 
 def msg(channel: str, data: dict, ts: float) -> dict:

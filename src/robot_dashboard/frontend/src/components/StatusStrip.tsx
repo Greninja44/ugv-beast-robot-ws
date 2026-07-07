@@ -1,8 +1,40 @@
+import { useEffect, useState } from 'react'
 import { useRobot } from '../stores/robot'
 import { useTeleop } from '../stores/teleop'
 import { ws } from '../lib/ws'
+import type { RobotMode } from '../lib/sensorTypes'
 import { BatteryMedium, Wifi, WifiOff, Cpu, Thermometer, OctagonX, PlayCircle } from 'lucide-react'
 import clsx from 'clsx'
+
+const MODES: RobotMode[] = ['idle', 'teleop', 'explore', 'track', 'ai']
+const AUTONOMOUS_MODES = new Set(['explore', 'track', 'ai'])
+
+function ModePill({ authenticated }: { authenticated: boolean }) {
+  const [mode, setMode] = useState<RobotMode | null>(null)
+  useEffect(() => ws.on('mode', (data) => setMode(data as RobotMode)), [])
+
+  const autonomous = mode != null && AUTONOMOUS_MODES.has(mode)
+  return (
+    <select
+      value={mode ?? ''}
+      onChange={(e) => ws.setMode(e.target.value)}
+      disabled={!authenticated}
+      title={authenticated ? 'Set /robot/mode — who currently holds motion authority'
+        : 'Unlock control on the Manual Control page first'}
+      className={clsx(
+        'rounded-full border-0 px-2.5 py-1 text-xs font-medium appearance-none cursor-pointer',
+        !authenticated && 'opacity-50 cursor-not-allowed',
+        mode == null ? 'bg-white/5 text-ink-dim'
+          : autonomous ? 'bg-good/10 text-good' : 'bg-white/5 text-ink-dim',
+      )}
+    >
+      <option value="" disabled>MODE: …</option>
+      {MODES.map((m) => (
+        <option key={m} value={m}>MODE: {m}</option>
+      ))}
+    </select>
+  )
+}
 
 function Pill({ ok, label }: { ok: boolean | null; label: string }) {
   return (
@@ -30,6 +62,7 @@ export default function StatusStrip() {
 
       <Pill ok={online} label={online ? 'LINK' : status.toUpperCase()} />
       <Pill ok={t ? t.ros : null} label="ROS" />
+      <ModePill authenticated={authenticated} />
 
       <div className="ml-auto flex items-center gap-4 text-xs text-ink-dim">
         {t?.temp != null && (

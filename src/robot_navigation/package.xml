@@ -3,15 +3,17 @@
 <package format="3">
   <name>robot_navigation</name>
   <version>0.1.0</version>
-  <description>Thin navigation layer that wraps the vendor Nav2 stack via actions. [runs on Pi]</description>
+  <description>Thin navigation layer that wraps the Waveshare Nav2 stack via actions. [runs on Pi]</description>
   <maintainer email="greninja220324@gmail.com">shinchan</maintainer>
   <license>Apache-2.0</license>
 
   <exec_depend>rclpy</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
   <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>action_msgs</exec_depend>
   <exec_depend>robot_interfaces</exec_depend>
-  <!-- Real Nav2 forwarding (enable on the Pi where Nav2 is installed): -->
-  <!-- <exec_depend>nav2_msgs</exec_depend> -->
+  <!-- Nav2 must be installed (it is, in the Waveshare Docker image on the Pi). -->
+  <exec_depend>nav2_msgs</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

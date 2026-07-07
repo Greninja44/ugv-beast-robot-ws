@@ -1,6 +1,24 @@
 """Entry point: `ros2 run robot_dashboard dashboard` or `python -m robot_dashboard.main`."""
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
+# Must run before rclpy is imported anywhere below (routes -> ros/bridge pulls it
+# in transitively) — RMW_IMPLEMENTATION is read when the DDS layer is loaded, not
+# lazily per-call. Whoever launches this process (a bare `ros2 run`, a manual
+# restart, docker exec without sourcing .bashrc, ...) may not have exported the
+# shared CycloneDDS/domain-42 config that every other robot_ws node uses; without
+# this, the dashboard silently lands on ROS2's plain defaults (rmw_fastrtps_cpp,
+# domain 0) and ends up in a completely separate, undiscoverable DDS graph from
+# everything else on the Pi — including anything IT launches via launch_manager
+# (base bringup, SLAM, Nav2, explore), since those inherit this process's own
+# environment. setdefault, not overwrite: an explicit export from the caller still
+# wins, this is only a floor.
+os.environ.setdefault('RMW_IMPLEMENTATION', 'rmw_cyclonedds_cpp')
+os.environ.setdefault('ROS_DOMAIN_ID', '42')
+os.environ.setdefault('ROS_LOCALHOST_ONLY', '0')
+
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -44,7 +62,13 @@ def create_app() -> FastAPI:
             cached index.html (referencing a since-replaced hashed filename)
             gets HTML back where it expected JS, and the whole SPA fails to
             parse and mount (blank page after any redeploy)."""
-            candidate = (frontend_dir / full_path).resolve()
+            # normpath (lexical), NOT resolve() (follows symlinks): under colcon
+            # --symlink-install the dist/assets/*.js files are symlinks back into
+            # src/, so resolve() would move the real path outside frontend_dir and
+            # the containment guard below would reject every legit asset (blank
+            # page). normpath still collapses any '..' traversal — the actual
+            # security concern here — without following the asset symlinks out.
+            candidate = Path(os.path.normpath(frontend_dir / full_path))
             if frontend_dir in candidate.parents and candidate.is_file():
                 return FileResponse(candidate)
             last_segment = full_path.rsplit('/', 1)[-1]

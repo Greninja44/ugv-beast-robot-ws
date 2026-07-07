@@ -52,3 +52,23 @@ export interface Waypoint {
   y: number
   yaw: number
 }
+
+// robot_skills.mode_server — who currently holds motion authority.
+export type RobotMode = 'idle' | 'teleop' | 'explore' | 'track' | 'ai' | string
+
+export interface PerceptEntry {
+  label: string
+  confidence: number
+  bearing: number // radians, + = left of camera center
+  frame_id: string
+  ts: number // unix seconds
+  bbox: [number, number, number, number] // normalized [x, y, w, h]; all-zero = no box
+}
+
+export interface SkillState {
+  skill: string | null
+  status: 'idle' | 'running' | 'succeeded' | 'canceled' | 'aborted' | 'rejected' | 'error' | string
+  feedback: string | null
+  progress: number | null
+  result_detail: string | null
+}

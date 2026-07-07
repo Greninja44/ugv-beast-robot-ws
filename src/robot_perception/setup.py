@@ -14,12 +14,13 @@ setup(
     zip_safe=True,
     maintainer='shinchan',
     maintainer_email='greninja220324@gmail.com',
-    description='Perception layer: consumes vendor /image_raw and /scan, publishes typed Percepts.',
+    description='Perception layer: consumes the OAK-D camera and /scan, publishes typed Percepts.',
     license='Apache-2.0',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
             'perception_node = robot_perception.perception_node:main',
+            'detector_node = robot_perception.detector_node:main',
         ],
     },
 )

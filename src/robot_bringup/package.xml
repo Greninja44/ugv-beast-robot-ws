@@ -3,7 +3,7 @@
 <package format="3">
   <name>robot_bringup</name>
   <version>0.1.0</version>
-  <description>Launch/orchestration for your stack. Composes robot_* nodes; references (never edits) vendor launch. [Pi + WSL]</description>
+  <description>Launch/orchestration for your stack. Composes robot_* nodes; references (never edits) Waveshare launch. [Pi + WSL]</description>
   <maintainer email="greninja220324@gmail.com">shinchan</maintainer>
   <license>Apache-2.0</license>
 
@@ -12,10 +12,14 @@
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>robot_perception</exec_depend>
   <exec_depend>robot_navigation</exec_depend>
-  <exec_depend>robot_manipulation</exec_depend>
   <exec_depend>robot_skills</exec_depend>
-  <exec_depend>robot_ai</exec_depend>
-  <exec_depend>robot_mcp</exec_depend>
+  <!-- robot_ai/robot_mcp back robot_wsl.launch.py only, and only exist on the WSL
+       build (build_wsl.sh). Gated so build_pi.sh's from-scratch Pi-only build doesn't
+       fail resolving them via colcon's exec_depend check. -->
+  <exec_depend condition="$ROBOT_WS_SIDE == 'wsl'">robot_ai</exec_depend>
+  <exec_depend condition="$ROBOT_WS_SIDE == 'wsl'">robot_mcp</exec_depend>
+  <!-- robot_manipulation intentionally not launched/depended on: no manipulation
+       hardware in scope right now. Add back once a gimbal/arm is fitted. -->
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

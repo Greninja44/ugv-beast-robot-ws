@@ -17,6 +17,11 @@ echo ">> installing rmw_cyclonedds in container (apt)"
 ssh "$PI" "docker exec -u root $C bash -lc 'apt-get update -qq && apt-get install -y -qq ros-humble-rmw-cyclonedds-cpp'"
 
 echo ">> appending DDS env to container /root/.bashrc (idempotent)"
+# UGV_MODEL/LDLIDAR_MODEL deliberately NOT set here: the vendor image's own .bashrc
+# already exports them (matching whatever hardware this specific unit shipped with —
+# e.g. LDLIDAR_MODEL=ld19 on this Pi). Duplicating them here with a guessed value would
+# silently override the correct vendor value since this block is appended later in the
+# file and sourced after it.
 ssh "$PI" "docker exec -u root $C bash -lc '
   grep -q RMW_IMPLEMENTATION /root/.bashrc || cat >> /root/.bashrc <<EOF
 
@@ -24,8 +29,6 @@ ssh "$PI" "docker exec -u root $C bash -lc '
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 export ROS_DOMAIN_ID=$DOMAIN
 export ROS_LOCALHOST_ONLY=0
-export UGV_MODEL=ugv_beast
-export LDLIDAR_MODEL=ld06
 EOF'"
 
 echo ">> done. Bring the vendor stack up with, e.g.:"

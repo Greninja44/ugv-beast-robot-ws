@@ -21,3 +21,14 @@ src/robot_dashboard/frontend/dist/
 # Vendor read-only reference mirror (docs/DEV_SETUP.md) — lives outside this
 # tree in practice, ignored here defensively in case it's ever nested inside.
 vendor_ref/
+
+# detector_node's isolated ML deps (torch/ultralytics + their own numpy/opencv) —
+# --system-site-packages venv, kept separate from system Python so it can't shadow
+# numpy/cv2 for every other node (see robot_perception/detector_node.py). Recreate
+# with: virtualenv --system-site-packages .venv-detector && .venv-detector/bin/pip
+# install ultralytics
+.venv-detector/
+
+# YOLO weights -- ultralytics auto-downloads these to whatever the cwd was at
+# first run; not source, don't commit regardless of where they land.
+*.pt

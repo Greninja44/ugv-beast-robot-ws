@@ -119,6 +119,19 @@ class WsClient {
   releaseControl() {
     this.send({ op: 'release_control' })
   }
+
+  // ---- mode arbiter / skills (Phases 1-8) -------------------------------------
+  setMode(mode: string) {
+    this.send({ op: 'set_mode', mode })
+  }
+
+  runSkill(skill: string, args: string[] = []) {
+    this.send({ op: 'run_skill', skill, args })
+  }
+
+  cancelSkill() {
+    this.send({ op: 'cancel_skill' })
+  }
 }
 
 export const ws = new WsClient()
