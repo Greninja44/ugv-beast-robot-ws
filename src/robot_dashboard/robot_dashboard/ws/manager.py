@@ -56,6 +56,9 @@ class WsManager:
             'tf': settings.rate_tf,
             'log': settings.rate_log,
             'nav': settings.rate_nav,
+            'mode': settings.rate_mode,
+            'percepts': settings.rate_percepts,
+            'skill': settings.rate_nav,  # same cadence as nav; both are goal-status polls
         }
 
     # ---- client lifecycle --------------------------------------------------
@@ -123,10 +126,20 @@ class WsManager:
                 if data is None or stamp == last_stamp:
                     continue
                 last_stamp = stamp
+            elif channel == 'skill':
+                data, stamp = self.bridge.skill_state.get()
+                if data is None or stamp == last_stamp:
+                    continue
+                last_stamp = stamp
             elif channel == 'log':
                 # A stream, not a single latest value — drain everything that
                 # arrived since the last tick and send it as one batch.
                 entries = self.bridge.log_buffer.drain()
+                if not entries:
+                    continue
+                data, stamp = entries, time.monotonic()
+            elif channel == 'percepts':
+                entries = self.bridge.percept_buffer.drain()
                 if not entries:
                     continue
                 data, stamp = entries, time.monotonic()
@@ -172,5 +185,17 @@ class WsManager:
             self.teleop.release_estop()
         elif m.op == 'release_control':
             self.teleop.release(client.id)
+        elif m.op == 'set_mode' and m.mode:
+            # bridge.set_mode_blocking briefly blocks on a ROS service call —
+            # to_thread keeps this coroutine (and the event loop) from stalling,
+            # same reasoning as core/lifespan.py's _apply_mode.
+            ok, detail = await asyncio.to_thread(self.bridge.set_mode_blocking, m.mode)
+            if not ok:
+                client.push(protocol.err('SET_MODE_FAILED', detail))
+        elif m.op == 'run_skill' and m.skill:
+            # send_skill_goal can block briefly too (wait_for_server) — same reasoning.
+            await asyncio.to_thread(self.bridge.send_skill_goal, m.skill, m.args)
+        elif m.op == 'cancel_skill':
+            self.bridge.cancel_skill_goal()
         else:
             client.push(protocol.err('UNSUPPORTED_OP', m.op))

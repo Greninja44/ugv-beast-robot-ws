@@ -201,6 +201,28 @@ def get_map(bridge: RosBridge = Depends(get_bridge)):
     })
 
 
+@router.post('/percepts/ingest')
+def ingest_percepts(body: dict, bridge: RosBridge = Depends(get_bridge), _=Depends(require_token)):
+    """Accept detections from an external (GPU) detector that can't reach the Pi over
+    DDS, and republish them as ROS Percepts. Body: {"detections": [{label, confidence,
+    bbox:[x,y,w,h], bearing?}, ...]}. bbox normalised [0,1]. Auth-gated like other
+    control endpoints — an unauthenticated client shouldn't be able to inject percepts."""
+    detections = body.get('detections', [])
+    n = 0
+    for d in detections:
+        bbox = d.get('bbox', [0.0, 0.0, 0.0, 0.0])
+        if len(bbox) != 4:
+            continue
+        bridge.publish_percept(
+            label=str(d.get('label', 'object')),
+            confidence=float(d.get('confidence', 0.0)),
+            bbox=bbox,
+            bearing=float(d.get('bearing', 0.0)),
+        )
+        n += 1
+    return {'ok': True, 'ingested': n}
+
+
 @router.post('/nav/goal')
 def send_nav_goal(body: dict, bridge: RosBridge = Depends(get_bridge), _=Depends(require_token)):
     bridge.send_nav_goal(float(body['x']), float(body['y']), float(body.get('yaw', 0.0)),

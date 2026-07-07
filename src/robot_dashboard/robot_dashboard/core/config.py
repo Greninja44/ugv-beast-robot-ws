@@ -54,11 +54,21 @@ class Settings(BaseSettings):
     # name=oak). CompressedImage only — never subscribe the raw Image (see docs/CAMERA.md).
     topic_camera: str = '/oak/rgb/image_raw/compressed'
     topic_led_ctrl: str = '/ugv/led_ctrl'
+    # robot_skills.mode_server / robot_perception's shared percept topic (Phases 1-8).
+    topic_mode: str = '/robot/mode'
+    topic_percepts: str = '/percepts'
 
     # Robot Controls page (docs/DASHBOARD_DESIGN.md §7). Maps save into the
     # vendor's own maps directory (data, not vendor source) so its Nav2 configs
     # can find them by name, matching how ugv_nav/maps/map.yaml is referenced.
     map_save_dir: str = '/home/ws/ugv_ws/src/ugv_main/ugv_nav/maps'
+    # Vendor (Waveshare) overlay setup.bash — sourced before the launch_manager
+    # runs any ugv_* launch, so SLAM/Nav2/base buttons work even if the dashboard
+    # itself was started without the vendor overlay on its path.
+    vendor_setup: str = '/home/ws/ugv_ws/install/setup.bash'
+    # Auto-start the base bringup (driver + lidar + sensors) when the dashboard boots,
+    # so teleop/lights/telemetry work out of the box without a manual launch.
+    autostart_base: bool = True
     # Off by default: reboot/shutdown are OS-level, not ROS — require an
     # explicit opt-in in dashboard.yaml even with a valid control token.
     allow_system_power_actions: bool = False
@@ -74,6 +84,8 @@ class Settings(BaseSettings):
     rate_log: float = 20.0
     rate_tf: float = 2.0
     rate_nav: float = 2.0
+    rate_mode: float = 2.0
+    rate_percepts: float = 5.0
     camera_stream_fps: float = 15.0
 
     # Battery model: 3S LiPo (measured 11.94 V healthy on this robot).

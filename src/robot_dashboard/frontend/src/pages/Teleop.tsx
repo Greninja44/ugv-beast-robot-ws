@@ -11,10 +11,46 @@ import { Joystick } from '../components/Joystick'
 import { GlassCard } from '../components/GlassCard'
 import { useKeyboardTeleop } from '../features/teleop/useKeyboardTeleop'
 import { useGamepadTeleop } from '../features/teleop/useGamepadTeleop'
+import type { PerceptEntry } from '../lib/sensorTypes'
 
 const SAMPLE_HZ = 15
+const MAX_PERCEPTS = 20
 
 interface StreamInfo { id: string; name: string; topic: string }
+
+/** Live feed of /percepts (detector_node's YOLO output, perception_node's LiDAR
+ * percept) — docked next to the camera so a detection is easy to eyeball against
+ * what's actually in frame. Percepts arrive in batches (see ws/manager.py's
+ * drain-on-tick pump), newest first, capped so the list doesn't grow forever. */
+function DetectionsPanel() {
+  const [percepts, setPercepts] = useState<PerceptEntry[]>([])
+
+  useEffect(() => ws.on('percepts', (data) => {
+    const batch = data as PerceptEntry[]
+    setPercepts((prev) => [...batch].reverse().concat(prev).slice(0, MAX_PERCEPTS))
+  }), [])
+
+  return (
+    <GlassCard title="Live detections">
+      {percepts.length === 0 ? (
+        <p className="text-xs text-ink-dim">
+          No percepts yet — needs perception_node and/or detector_node running.
+        </p>
+      ) : (
+        <ul className="space-y-1 max-h-64 overflow-y-auto text-xs">
+          {percepts.map((p, i) => (
+            <li key={i} className="flex items-center justify-between gap-2 border-b border-edge/50 py-1 last:border-0">
+              <span className="font-medium">{p.label}</span>
+              <span className="text-ink-dim">{Math.round(p.confidence * 100)}%</span>
+              <span className="text-ink-dim">{(p.bearing * 180 / Math.PI).toFixed(0)}°</span>
+              <span className="text-ink-dim/70">{p.frame_id}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </GlassCard>
+  )
+}
 
 function TokenGate() {
   const [value, setValue] = useState('')
@@ -43,6 +79,63 @@ function TokenGate() {
       </div>
     </GlassCard>
   )
+}
+
+/** Draws YOLO detection boxes over the live camera. Reads /percepts (each batch is
+ * ~one frame's detections; we replace rather than accumulate, and age out after
+ * STALE_MS so boxes don't linger if detection stops). Box coords are normalized
+ * [0,1] against the source image, mapped here onto the <img>'s actual rendered
+ * rect — so it stays correct even if the feed is letterboxed inside the panel. */
+const STALE_MS = 800
+function DetectionOverlay({ containerRef, imgRef }: {
+  containerRef: React.RefObject<HTMLDivElement | null>
+  imgRef: React.RefObject<HTMLImageElement | null>
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const latest = useRef<{ boxes: PerceptEntry[]; ts: number }>({ boxes: [], ts: 0 })
+
+  useEffect(() => ws.on('percepts', (data) => {
+    const batch = (data as PerceptEntry[]).filter((p) => p.bbox && p.bbox.some((v) => v !== 0))
+    if (batch.length) latest.current = { boxes: batch, ts: performance.now() }
+  }), [])
+
+  useEffect(() => {
+    let raf = 0
+    const draw = () => {
+      raf = requestAnimationFrame(draw)
+      const canvas = canvasRef.current, container = containerRef.current, img = imgRef.current
+      if (!canvas || !container) return
+      const cw = container.clientWidth, ch = container.clientHeight
+      if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch }
+      const ctx = canvas.getContext('2d')!
+      ctx.clearRect(0, 0, cw, ch)
+
+      const { boxes, ts } = latest.current
+      if (!img || performance.now() - ts > STALE_MS) return
+      // The <img> is centered with max-w/max-h; find its rendered rect within the container.
+      const ir = img.getBoundingClientRect(), pr = container.getBoundingClientRect()
+      const ox = ir.left - pr.left, oy = ir.top - pr.top
+      ctx.font = '12px system-ui, sans-serif'
+      ctx.textBaseline = 'bottom'
+      for (const p of boxes) {
+        const [bx, by, bw, bh] = p.bbox
+        const x = ox + bx * ir.width, y = oy + by * ir.height
+        const w = bw * ir.width, h = bh * ir.height
+        ctx.strokeStyle = '#34d399'; ctx.lineWidth = 2
+        ctx.strokeRect(x, y, w, h)
+        const tag = `${p.label} ${Math.round(p.confidence * 100)}%`
+        const tw = ctx.measureText(tag).width
+        ctx.fillStyle = '#34d399'
+        ctx.fillRect(x, y - 15, tw + 8, 15)
+        ctx.fillStyle = '#03150e'
+        ctx.fillText(tag, x + 4, y - 2)
+      }
+    }
+    raf = requestAnimationFrame(draw)
+    return () => cancelAnimationFrame(raf)
+  }, [containerRef, imgRef])
+
+  return <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 h-full w-full" />
 }
 
 /** Live camera view with fullscreen/snapshot/record — same feature set as the
@@ -179,6 +272,10 @@ function CameraPanel() {
           </div>
         )}
 
+        {streaming && !imgError && (
+          <DetectionOverlay containerRef={containerRef} imgRef={imgRef} />
+        )}
+
         {recording && (
           <span className="absolute top-3 left-3 flex items-center gap-1.5 rounded-full bg-bad/80
                            px-2.5 py-1 text-xs font-semibold text-white">
@@ -294,6 +391,8 @@ export default function Teleop() {
       {authenticated && (
         <>
           <CameraPanel />
+
+          <DetectionsPanel />
 
           <GlassCard title="Control status">
             <div className="flex items-center gap-2 text-sm">

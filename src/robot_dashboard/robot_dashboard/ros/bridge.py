@@ -32,8 +32,11 @@ from nav2_msgs.action import NavigateToPose
 from nav2_msgs.srv import SaveMap
 from nav_msgs.msg import OccupancyGrid, Odometry
 from rcl_interfaces.msg import Log
+from robot_interfaces.action import RunSkill
+from robot_interfaces.msg import Percept
+from robot_interfaces.srv import SetMode
 from sensor_msgs.msg import CompressedImage, Imu, LaserScan
-from std_msgs.msg import Float32, Float32MultiArray
+from std_msgs.msg import Float32, Float32MultiArray, String
 
 from ..core.config import Settings
 
@@ -43,6 +46,10 @@ SENSOR_QOS = QoSPresetProfiles.SENSOR_DATA.value
 # VOLATILE subscriber against a TRANSIENT_LOCAL publisher silently gets nothing.
 MAP_QOS = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE,
                       durability=DurabilityPolicy.TRANSIENT_LOCAL)
+# robot_skills.mode_server publishes /robot/mode the same way — must match or a
+# VOLATILE subscriber here gets nothing (same pitfall as MAP_QOS above).
+MODE_QOS = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE,
+                       durability=DurabilityPolicy.TRANSIENT_LOCAL)
 
 # Frame pairs whose health/age is reported on the 'tf' channel (see docs/TF_TREE.md).
 # 'map'->'odom' only exists once SLAM/AMCL is running — its absence is expected, not an error.
@@ -104,9 +111,12 @@ class RosBridge:
     def __init__(self, settings: Settings):
         self.s = settings
         self.buffers: dict[str, LatestBuffer] = {
-            k: LatestBuffer() for k in ('voltage', 'odom', 'imu', 'scan', 'camera', 'map')
+            k: LatestBuffer() for k in ('voltage', 'odom', 'imu', 'scan', 'camera', 'map', 'mode')
         }
         self.log_buffer = LogBuffer()
+        # Percepts are a stream (possibly several detections per frame from
+        # detector_node), not a single latest value — same drain-batch shape as logs.
+        self.percept_buffer = LogBuffer()
         self._subs: dict[str, Any] = {}          # channel -> rclpy subscription
         self._refcounts: dict[str, int] = {}      # channel -> active web clients
         self._lock = threading.Lock()
@@ -115,11 +125,18 @@ class RosBridge:
         self._thread: threading.Thread | None = None
         self._cmd_vel_pub = None
         self._led_pub = None
+        self._percept_pub = None
         self._save_map_client = None
+        self._mode_client = None
         self._nav_client: ActionClient | None = None
         self._nav_goal_handle = None
         self.nav_state = LatestBuffer()
         self.nav_state.put({'status': 'idle', 'distance_remaining': None})
+        self._skill_client: ActionClient | None = None
+        self._skill_goal_handle = None
+        self.skill_state = LatestBuffer()
+        self.skill_state.put({'skill': None, 'status': 'idle', 'feedback': None,
+                               'progress': None, 'result_detail': None})
 
     # ---- lifecycle -------------------------------------------------------
     def start(self) -> None:
@@ -127,8 +144,16 @@ class RosBridge:
         self._node = rclpy.create_node('dashboard_node')
         self._cmd_vel_pub = self._node.create_publisher(Twist, self.s.topic_cmd_vel, 10)
         self._led_pub = self._node.create_publisher(Float32MultiArray, self.s.topic_led_ctrl, 10)
+        # Percepts ingested over HTTP (from the GPU detector on the dev box, which
+        # can't reach the Pi over DDS) get republished onto the ROS /percepts topic
+        # so they're first-class alongside on-Pi perception. The bridge's own lazy
+        # /percepts subscription then feeds the dashboard overlay — single source of
+        # truth, no separate HTTP-only path to keep in sync.
+        self._percept_pub = self._node.create_publisher(Percept, self.s.topic_percepts, 10)
         self._save_map_client = self._node.create_client(SaveMap, '/map_saver/save_map')
+        self._mode_client = self._node.create_client(SetMode, 'set_mode')
         self._nav_client = ActionClient(self._node, NavigateToPose, 'navigate_to_pose')
+        self._skill_client = ActionClient(self._node, RunSkill, 'run_skill')
         self._executor = SingleThreadedExecutor()
         self._executor.add_node(self._node)
 
@@ -214,6 +239,13 @@ class RosBridge:
 
     def _sub_log(self):
         return self._node.create_subscription(Log, self.s.topic_rosout, self._on_log, 50)
+
+    def _sub_mode(self):
+        return self._node.create_subscription(String, self.s.topic_mode, self._on_mode, MODE_QOS)
+
+    def _sub_percepts(self):
+        return self._node.create_subscription(
+            Percept, self.s.topic_percepts, self._on_percept, SENSOR_QOS)
 
     def _sub_tf(self):
         return _TfHandle(self._node)
@@ -336,6 +368,23 @@ class RosBridge:
             'node': m.name, 'msg': m.msg, 'ts': m.stamp.sec,
         })
 
+    def _on_mode(self, m: String) -> None:
+        self.buffers['mode'].put(m.data)
+
+    def _on_percept(self, m: Percept) -> None:
+        # Stream, not latest-wins: detector_node/perception_node can each publish
+        # several percepts per tick, and a scrolling feed wants all of them, same
+        # reasoning as _on_log above.
+        self.percept_buffer.push({
+            'label': m.label,
+            'confidence': round(m.confidence, 3),
+            'bearing': round(m.bearing, 3),
+            'frame_id': m.header.frame_id,
+            'ts': m.header.stamp.sec + m.header.stamp.nanosec / 1e9,
+            # normalised [0,1] image-plane box; all-zero means no box (e.g. LiDAR percept).
+            'bbox': [round(m.bbox_x, 4), round(m.bbox_y, 4), round(m.bbox_w, 4), round(m.bbox_h, 4)],
+        })
+
     # ---- publishers (Phase 2 wires teleop service to this) ----------------
     def publish_cmd_vel(self, linear: float, angular: float) -> None:
         t = Twist()
@@ -349,6 +398,21 @@ class RosBridge:
         m = Float32MultiArray()
         m.data = [float(pwm_a), float(pwm_b)]
         self._led_pub.publish(m)
+
+    def publish_percept(self, label: str, confidence: float, bbox: list[float],
+                         bearing: float = 0.0, frame_id: str = '3d_camera_link') -> None:
+        """Republish an externally-sourced detection (the GPU detector, over HTTP) as
+        a ROS Percept — see _percept_pub's note in start(). bbox is [x, y, w, h]
+        normalised to [0,1]. Thread-safe: called from the asyncio route handler, but
+        rclpy publishers are safe to call from any thread."""
+        p = Percept()
+        p.header.frame_id = frame_id
+        p.header.stamp = self._node.get_clock().now().to_msg()
+        p.label = label
+        p.confidence = float(confidence)
+        p.bearing = float(bearing)
+        p.bbox_x, p.bbox_y, p.bbox_w, p.bbox_h = (float(v) for v in bbox)
+        self._percept_pub.publish(p)
 
     def save_map_blocking(self, name: str, timeout: float = 8.0) -> tuple[bool, str]:
         """Calls Nav2's standard map_saver_server (SaveMap). BLOCKING — run this
@@ -388,6 +452,44 @@ class RosBridge:
         if 'error' in outcome:
             return False, outcome['error']
         return bool(outcome['result'].result), ''
+
+    def set_mode_blocking(self, mode: str, timeout: float = 3.0) -> tuple[bool, str]:
+        """Calls robot_skills' mode arbiter (robot_interfaces/srv/SetMode) so the
+        dashboard's own authority (teleop lease, e-stop) is reflected on /robot/mode —
+        this is what makes autonomous nodes (nav_bridge, skill_server) stand down the
+        instant a human takes the joystick, and stay down when they let go.
+
+        BLOCKING — same rule as save_map_blocking: run via `await
+        asyncio.to_thread(...)`, never directly in an async function.
+
+        If mode_server isn't running (e.g. a WSL-only dev setup with nothing launched
+        on the Pi yet), this fails soft: teleop/e-stop still work locally, there's just
+        no autonomous stack around to arbitrate with yet."""
+        if not self._mode_client.service_is_ready():
+            if not self._mode_client.wait_for_service(timeout_sec=1.0):
+                return False, 'mode_server not available (is robot_skills running?)'
+
+        req = SetMode.Request()
+        req.mode = mode
+
+        done = threading.Event()
+        outcome: dict[str, Any] = {}
+
+        def _on_done(fut):
+            try:
+                outcome['result'] = fut.result()
+            except Exception as e:
+                outcome['error'] = str(e)
+            done.set()
+
+        future = self._mode_client.call_async(req)
+        future.add_done_callback(_on_done)
+        if not done.wait(timeout):
+            return False, 'set_mode call timed out'
+        if 'error' in outcome:
+            return False, outcome['error']
+        resp = outcome['result']
+        return bool(resp.success), resp.message
 
     # ---- Nav2 navigate_to_pose action ------------------------------------------
     # All callbacks below fire on the ROS executor thread (rclpy's normal
@@ -437,6 +539,64 @@ class RosBridge:
         }.get(status, 'unknown')
         self.nav_state.put({'status': label, 'distance_remaining': 0.0 if label == 'succeeded' else None})
         self._nav_goal_handle = None
+
+    # ---- robot_skills RunSkill action -------------------------------------------
+    # Same shape as the nav goal section above: callbacks fire on the ROS executor
+    # thread and only ever touch skill_state's lock.
+    def send_skill_goal(self, skill: str, args: list[str]) -> None:
+        if not self._skill_client.wait_for_server(timeout_sec=1.0):
+            self.skill_state.put({'skill': skill, 'status': 'error', 'feedback': None,
+                                   'progress': None,
+                                   'result_detail': 'run_skill action server not available '
+                                                     '(is robot_skills running?)'})
+            return
+
+        goal = RunSkill.Goal()
+        goal.skill = skill
+        goal.args = args
+
+        self.skill_state.put({'skill': skill, 'status': 'running', 'feedback': None,
+                               'progress': None, 'result_detail': None})
+        send_future = self._skill_client.send_goal_async(goal, feedback_callback=self._on_skill_feedback)
+        send_future.add_done_callback(self._on_skill_goal_response)
+
+    def cancel_skill_goal(self) -> None:
+        if self._skill_goal_handle is not None:
+            self._skill_goal_handle.cancel_goal_async()
+
+    def _on_skill_goal_response(self, future) -> None:
+        handle = future.result()
+        if not handle.accepted:
+            prev, _ = self.skill_state.get()
+            skill = prev['skill'] if prev else None
+            self.skill_state.put({'skill': skill, 'status': 'rejected', 'feedback': None,
+                                   'progress': None, 'result_detail': 'goal rejected'})
+            return
+        self._skill_goal_handle = handle
+        result_future = handle.get_result_async()
+        result_future.add_done_callback(self._on_skill_result)
+
+    def _on_skill_feedback(self, feedback_msg) -> None:
+        fb = feedback_msg.feedback
+        prev, _ = self.skill_state.get()
+        skill = prev['skill'] if prev else None
+        self.skill_state.put({'skill': skill, 'status': 'running', 'feedback': fb.status,
+                               'progress': round(fb.progress, 3), 'result_detail': None})
+
+    def _on_skill_result(self, future) -> None:
+        status = future.result().status
+        result = future.result().result
+        label = {
+            GoalStatus.STATUS_SUCCEEDED: 'succeeded',
+            GoalStatus.STATUS_CANCELED: 'canceled',
+            GoalStatus.STATUS_ABORTED: 'aborted',
+        }.get(status, 'unknown')
+        prev, _ = self.skill_state.get()
+        skill = prev['skill'] if prev else None
+        self.skill_state.put({'skill': skill, 'status': label, 'feedback': None,
+                               'progress': 1.0 if label == 'succeeded' else None,
+                               'result_detail': result.result_detail})
+        self._skill_goal_handle = None
 
 
 class _MultiSub:

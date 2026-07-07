@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Flag, Plus, Trash2, X } from 'lucide-react'
+import { Flag, Plus, Route, Square, Trash2, X } from 'lucide-react'
 import { ws } from '../lib/ws'
 import { apiFetch } from '../lib/api'
 import { useChannelRef } from '../lib/useChannelRef'
@@ -39,6 +39,43 @@ export default function Nav() {
   const cancelGoal = async () => {
     await apiFetch('/nav/cancel', { method: 'POST' })
   }
+
+  // ---- sequential waypoint patrol ------------------------------------------
+  // Drive to each saved waypoint in turn, advancing only when Nav2 reports the
+  // current one 'succeeded'. patrolIdxRef (not state) holds the position so the
+  // status-watcher effect below doesn't re-fire itself when it advances — it only
+  // reacts to genuine nav-status transitions.
+  const [patrolActive, setPatrolActive] = useState(false)
+  const patrolIdxRef = useRef<number | null>(null)
+
+  const goToPatrolIdx = (i: number) => {
+    patrolIdxRef.current = i
+    const wp = waypoints[i]
+    sendGoal(wp.x, wp.y, wp.yaw)
+  }
+  const startPatrol = () => {
+    if (!waypoints.length || !authenticated) return
+    setPatrolActive(true)
+    goToPatrolIdx(0)
+  }
+  const stopPatrol = () => {
+    setPatrolActive(false)
+    patrolIdxRef.current = null
+    cancelGoal()
+  }
+
+  useEffect(() => {
+    if (!patrolActive || patrolIdxRef.current == null) return
+    const s = nav?.status
+    if (s === 'succeeded') {
+      const next = patrolIdxRef.current + 1
+      if (next < waypoints.length) goToPatrolIdx(next)
+      else { setPatrolActive(false); patrolIdxRef.current = null }  // patrol complete
+    } else if (s === 'aborted' || s === 'rejected' || s === 'error') {
+      setPatrolActive(false); patrolIdxRef.current = null  // a leg failed — stop
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nav?.status, patrolActive])
 
   const saveWaypointHere = async () => {
     const odom = odomRef.current
@@ -89,18 +126,32 @@ export default function Nav() {
       </GlassCard>
 
       <GlassCard title="Waypoints" className="xl:col-span-4">
-        <div className="mb-3 flex gap-2">
+        <div className="mb-3 flex flex-wrap gap-2">
           <input
             value={wpName}
             onChange={(e) => setWpName(e.target.value)}
             placeholder="name (optional)"
-            className="flex-1 rounded-lg border border-edge bg-white/5 px-3 py-1.5 text-sm outline-none focus:border-accent"
+            className="min-w-[8rem] flex-1 rounded-lg border border-edge bg-white/5 px-3 py-1.5 text-sm outline-none focus:border-accent"
           />
           <button onClick={saveWaypointHere} disabled={!authenticated}
                   className="flex items-center gap-1.5 rounded-lg bg-accent/15 px-3 py-1.5 text-xs
                              font-medium text-accent hover:bg-accent/25 transition-colors disabled:opacity-40">
             <Plus size={14} /> Save current position
           </button>
+          {patrolActive ? (
+            <button onClick={stopPatrol}
+                    className="flex items-center gap-1.5 rounded-lg bg-bad/15 px-3 py-1.5 text-xs
+                               font-medium text-bad hover:bg-bad/25 transition-colors">
+              <Square size={14} /> Stop patrol
+            </button>
+          ) : (
+            <button onClick={startPatrol} disabled={!authenticated || waypoints.length === 0}
+                    title={waypoints.length === 0 ? 'Save some waypoints first' : 'Visit every waypoint in order'}
+                    className="flex items-center gap-1.5 rounded-lg bg-accent/15 px-3 py-1.5 text-xs
+                               font-medium text-accent hover:bg-accent/25 transition-colors disabled:opacity-40">
+              <Route size={14} /> Patrol all
+            </button>
+          )}
         </div>
         {waypoints.length === 0 && <p className="text-xs text-ink-dim">No waypoints saved yet.</p>}
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">

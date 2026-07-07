@@ -8,8 +8,15 @@
   <license>Apache-2.0</license>
 
   <exec_depend>rclpy</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
   <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>rcl_interfaces</exec_depend>
   <exec_depend>robot_interfaces</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>visualization_msgs</exec_depend>
+  <!-- explore_room launches the Waveshare-vendored explore_lite via `ros2 launch`
+       (subprocess) rather than a rosdep-declared dependency — it isn't a Python/C++
+       import of robot_skills, just an external process this package starts and stops. -->
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

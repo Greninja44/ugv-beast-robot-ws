@@ -3,7 +3,7 @@
 <package format="3">
   <name>robot_perception</name>
   <version>0.1.0</version>
-  <description>Perception layer: consumes vendor /image_raw and /scan, publishes typed Percepts. [runs on Pi]</description>
+  <description>Perception: LiDAR + camera plumbing (perception_node, Pi) and YOLO detection (detector_node, WSL/GPU).</description>
   <maintainer email="greninja220324@gmail.com">shinchan</maintainer>
   <license>Apache-2.0</license>
 
@@ -11,6 +11,10 @@
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>geometry_msgs</exec_depend>
   <exec_depend>robot_interfaces</exec_depend>
+  <exec_depend>python3-opencv</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <!-- detector_node only (WSL/GPU side, not rosdep-resolvable): pip install ultralytics
+       (pulls in torch+CUDA). perception_node (Pi side) does not need this. -->
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
